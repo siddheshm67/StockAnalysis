@@ -1,0 +1,434 @@
+package org.example;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+public class HistoricalDataFetcher {
+
+    public static void main(String[] args) throws IOException {
+        String enctoken = "dp0j96lzRTh2VoIqBlLqi8y79BGGnfyYvH3QdIUw6jKAw93vIFwg3036UU63HRSQ/1RMk3d+WM2Hl2tyC6g/x2CdBqoaFSuSUhY1bTB17GXe8W+gOSZu6Q==";
+        int token = 2953217;
+        String timeframe = "day";
+
+        // Main date
+        LocalDate eventDate = LocalDate.of(2024, 8, 16);
+
+        LocalDate startDate = eventDate.minusDays(1);
+        LocalDate endDate = eventDate.plusDays(1);
+
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Historical Data");
+
+        // Create header row
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"Token", "Name", "Open", "High", "Low", "Close", "Volume", "Date", "Time"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+        }
+
+        // Initialize the row counter after the header row
+        int rowCounter = 1;
+
+        while (!startDate.isAfter(endDate)) {
+            System.out.println("Checking for Date: " + startDate);
+
+            boolean dataFound = false;
+            int retryCount = 0;
+
+            // Retry loop to adjust dates
+            while (retryCount < 10 && !dataFound) { // Limit retries to 5
+                System.out.println("Attempt " + (retryCount + 1) + " for date: " + startDate);
+
+                String url = String.format("https://kite.zerodha.com/oms/instruments/historical/%d/%s", token, timeframe);
+                Map<String, String> params = new HashMap<>();
+                params.put("oi", "1");
+                params.put("from", startDate.toString());
+                params.put("to", startDate.toString());
+
+                String authorizationHeader = "enctoken " + enctoken;
+
+                try {
+                    StringBuilder urlWithParams = new StringBuilder(url);
+                    urlWithParams.append("?");
+                    for (Map.Entry<String, String> entry : params.entrySet()) {
+                        urlWithParams.append(entry.getKey())
+                                .append("=")
+                                .append(entry.getValue())
+                                .append("&");
+                    }
+                    urlWithParams.deleteCharAt(urlWithParams.length() - 1);
+
+                    URL requestUrl = new URL(urlWithParams.toString());
+                    HttpURLConnection connection = (HttpURLConnection) requestUrl.openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.setRequestProperty("Authorization", authorizationHeader);
+
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                        StringBuilder response = new StringBuilder();
+                        String inputLine;
+
+                        while ((inputLine = in.readLine()) != null) {
+                            response.append(inputLine);
+                        }
+                        in.close();
+
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        JsonNode rootNode = objectMapper.readTree(response.toString());
+                        JsonNode candlesNode = rootNode.path("data").path("candles");
+
+                        if (!candlesNode.isEmpty()) {
+                            for (JsonNode candle : candlesNode) {
+                                Row row = sheet.createRow(rowCounter++);
+
+                                String dateTime = candle.get(0).asText();
+                                String date = dateTime.split("T")[0];
+                                String time = "T" + dateTime.split("T")[1];
+
+                                row.createCell(0).setCellValue(token);
+                                row.createCell(1).setCellValue("TCS");
+                                row.createCell(2).setCellValue(candle.get(1).asDouble());
+                                row.createCell(3).setCellValue(candle.get(2).asDouble());
+                                row.createCell(4).setCellValue(candle.get(3).asDouble());
+                                row.createCell(5).setCellValue(candle.get(4).asDouble());
+                                row.createCell(6).setCellValue(candle.get(5).asInt());
+                                row.createCell(7).setCellValue(date);
+                                row.createCell(8).setCellValue(time);
+                            }
+                            dataFound = true; // Exit the retry loop as data has been found
+                        } else {
+                            System.out.println("No data available for date: " + startDate);
+                        }
+                    } else {
+                        System.out.println("GET request failed. Response Code: " + responseCode);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                // Adjust date for next retry
+                retryCount++;
+                if (!dataFound) {
+                    long diff = ChronoUnit.DAYS.between(startDate,eventDate);
+                    if (diff > 0) {
+                        startDate = startDate.minusDays(1);
+                    } else {
+                        startDate = startDate.plusDays(1);
+                    }
+                }
+            }
+
+            if (!dataFound) {
+                System.out.println("No data found after retries for date: " + startDate);
+                break; // Exit the outer loop if no data is found after retries
+            }
+
+            // Move to the next date
+            startDate = startDate.plusDays(retryCount);
+        }
+
+        // Auto-size columns after all rows are written
+        for (int i = 0; i < headers.length; i++) {
+            sheet.autoSizeColumn(i);
+        }
+
+        // Write the workbook to an Excel file
+        try (FileOutputStream fileOut = new FileOutputStream("outputTable.xlsx")) {
+            workbook.write(fileOut);
+            System.out.println("Excel file has been written successfully.");
+        } finally {
+            workbook.close();
+        }
+    }
+
+
+
+    /*public static void main(String[] args) throws IOException {
+        String enctoken = "dp0j96lzRTh2VoIqBlLqi8y79BGGnfyYvH3QdIUw6jKAw93vIFwg3036UU63HRSQ/1RMk3d+WM2Hl2tyC6g/x2CdBqoaFSuSUhY1bTB17GXe8W+gOSZu6Q==";
+        int token = 2953217;
+        String timeframe = "day";
+
+        //main date
+        LocalDate eventDate = LocalDate.of(2025, 1, 2);
+
+        LocalDate startDate = eventDate.minusDays(1);
+        LocalDate endDate = eventDate.plusDays(1);
+
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Historical Data");
+
+        // Create header row
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"Token", "Name", "Open", "High", "Low", "Close", "Volume", "Date", "Time"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+        }
+
+        // Initialize the row counter after the header row
+        int rowCounter = 1;
+
+        // While loop to iterate through dates
+        while (!startDate.isAfter(endDate)) {
+            System.out.println("Writing for Date: " + startDate);
+            String url = String.format("https://kite.zerodha.com/oms/instruments/historical/%d/%s", token, timeframe);
+            Map<String, String> params = new HashMap<>();
+            params.put("oi", "1");
+            params.put("from", startDate.toString());
+            params.put("to", startDate.toString());
+
+            String authorizationHeader = "enctoken " + enctoken;
+
+            try {
+                StringBuilder urlWithParams = new StringBuilder(url);
+                urlWithParams.append("?");
+                for (Map.Entry<String, String> entry : params.entrySet()) {
+                    urlWithParams.append(entry.getKey())
+                            .append("=")
+                            .append(entry.getValue())
+                            .append("&");
+                }
+                urlWithParams.deleteCharAt(urlWithParams.length() - 1);
+
+                URL requestUrl = new URL(urlWithParams.toString());
+                HttpURLConnection connection = (HttpURLConnection) requestUrl.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Authorization", authorizationHeader);
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String inputLine;
+
+                    while ((inputLine = in.readLine()) != null) {
+                        response.append(inputLine);
+                    }
+                    in.close();
+
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    JsonNode rootNode = objectMapper.readTree(response.toString());
+                    JsonNode candlesNode = rootNode.path("data").path("candles");
+
+                    if (!candlesNode.isEmpty()) {
+                        for (JsonNode candle : candlesNode) {
+                            Row row = sheet.createRow(rowCounter++); // Increment the rowCounter for each new row
+
+                            String dateTime = candle.get(0).asText();
+                            String date = dateTime.split("T")[0];
+                            String time = "T" + dateTime.split("T")[1];
+
+                            row.createCell(0).setCellValue(token);
+                            row.createCell(1).setCellValue("TCS"); // Hardcoded name
+                            row.createCell(2).setCellValue(candle.get(1).asDouble()); // Open
+                            row.createCell(3).setCellValue(candle.get(2).asDouble()); // High
+                            row.createCell(4).setCellValue(candle.get(3).asDouble()); // Low
+                            row.createCell(5).setCellValue(candle.get(4).asDouble()); // Close
+                            row.createCell(6).setCellValue(candle.get(5).asInt());    // Volume
+                            row.createCell(7).setCellValue(date);                    // Date
+                            row.createCell(8).setCellValue(time);                    // Time
+                        }
+                    } else {
+                        System.out.println("No data available for date: " + startDate);
+                    }
+                } else {
+                    System.out.println("GET request failed. Response Code: " + responseCode);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            startDate = startDate.plusDays(1); // Increment the date
+        }
+
+        // Auto-size columns after all rows are written
+        for (int i = 0; i < headers.length; i++) {
+            sheet.autoSizeColumn(i);
+        }
+
+        // Write the workbook to an Excel file
+        try (FileOutputStream fileOut = new FileOutputStream("outputTable.xlsx")) {
+            workbook.write(fileOut);
+            System.out.println("Excel file has been written successfully.");
+        } finally {
+            workbook.close();
+        }
+    }*/
+
+        /*public static void main(String[] args) throws IOException {
+        String enctoken = "dp0j96lzRTh2VoIqBlLqi8y79BGGnfyYvH3QdIUw6jKAw93vIFwg3036UU63HRSQ/1RMk3d+WM2Hl2tyC6g/x2CdBqoaFSuSUhY1bTB17GXe8W+gOSZu6Q==";
+        int token = 2953217;
+        String timeframe = "day";
+
+        LocalDate startDate = LocalDate.of(2025, 1, 1);
+
+        // Define the given date (e.g., stop when the date is 2025-01-05)
+        LocalDate givenDate = startDate.plusDays(5);
+
+        // Create a new workbook and sheet
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("Historical Data");
+
+        // Create header row
+        Row headerRow = sheet.createRow(0);
+        String[] headers = {"Token", "Name", "Open", "High", "Low", "Close", "Volume", "Date", "Time"};
+        for (int i = 0; i < headers.length; i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers[i]);
+        }
+
+        // While loop to iterate through dates
+        while (!startDate.isAfter(givenDate)) {
+            System.out.println("Current Date: " + startDate);
+
+            LocalDate sdt = startDate;
+            LocalDate edt = sdt;
+            String url = String.format("https://kite.zerodha.com/oms/instruments/historical/%d/%s", token, timeframe);
+
+            // Build query parameters
+            Map<String, String> params = new HashMap<>();
+            params.put("oi", "1");
+            params.put("from", sdt.toString());
+            params.put("to", edt.toString());
+
+            // Add headers
+            String authorizationHeader = "enctoken " + enctoken;
+
+            try {
+                // Append query parameters to URL
+                StringBuilder urlWithParams = new StringBuilder(url);
+                urlWithParams.append("?");
+                for (Map.Entry<String, String> entry : params.entrySet()) {
+                    urlWithParams.append(entry.getKey())
+                            .append("=")
+                            .append(entry.getValue())
+                            .append("&");
+                }
+
+                // Remove the trailing "&"
+                urlWithParams.deleteCharAt(urlWithParams.length() - 1);
+
+                // Create connection
+                URL requestUrl = new URL(urlWithParams.toString());
+                HttpURLConnection connection = (HttpURLConnection) requestUrl.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Authorization", authorizationHeader);
+
+                // Read response
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    String inputLine;
+                    StringBuilder response = new StringBuilder();
+
+                    while ((inputLine = in.readLine()) != null) {
+                        response.append(inputLine);
+                    }
+                    in.close();
+
+                    // Parse JSON and write to file
+                    String fileName = "output.txt";
+
+                    ObjectMapper mapper = new ObjectMapper();
+                    Object json = mapper.readValue(response.toString(), Object.class);
+                    String jsonInput = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
+
+                    System.out.println(jsonInput);
+
+                    String name = "TCS";
+
+                    // Excel file output path
+                    String excelFileName = "outputTable.xlsx";
+
+                    boolean flag = false;
+
+                    try {
+                        // Parse JSON input
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        JsonNode rootNode = objectMapper.readTree(jsonInput);
+                        JsonNode candlesNode = rootNode.path("data").path("candles");
+
+                        // Start writing rows after the header
+                        int rowNum = 1;
+
+                        if (!candlesNode.isEmpty()) {
+                            for (JsonNode candle : candlesNode) {
+                                Row row = sheet.createRow(rowNum++);
+
+                                // Parse date and time
+                                String dateTime = candle.get(0).asText();
+                                String date = dateTime.split("T")[0];
+                                String time = "T" + dateTime.split("T")[1];
+
+                                // Fill the row with data
+                                row.createCell(0).setCellValue(token);
+                                row.createCell(1).setCellValue(name);
+                                row.createCell(2).setCellValue(candle.get(1).asDouble()); // Open
+                                row.createCell(3).setCellValue(candle.get(2).asDouble()); // High
+                                row.createCell(4).setCellValue(candle.get(3).asDouble()); // Low
+                                row.createCell(5).setCellValue(candle.get(4).asDouble()); // Close
+                                row.createCell(6).setCellValue(candle.get(5).asInt());    // Volume
+                                row.createCell(7).setCellValue(date);                    // Date
+                                row.createCell(8).setCellValue(time);                    // Time
+                            }
+
+                            // Auto-size columns
+                            for (int i = 0; i < headers.length; i++) {
+                                sheet.autoSizeColumn(i);
+                            }
+
+                            // Write to an Excel file (only once after all rows are written)
+                            try (FileOutputStream fileOut = new FileOutputStream(excelFileName)) {
+                                workbook.write(fileOut);
+                            }
+
+                            System.out.println("Excel file has been written to " + excelFileName);
+                            flag = true;
+                        } else {
+                            System.out.println("No values found in candlesNode.");
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    System.out.println("flag : " + flag);
+                } else {
+                    System.out.println("GET request failed. Response Code: " + responseCode);
+                }
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            if (startDate.equals(givenDate)) {
+                System.out.println("Stopping loop: Reached the given date -> " + startDate);
+                break;
+            }
+
+            // Increment date by one day
+            startDate = startDate.plusDays(1);
+        }
+        workbook.close();
+    }*/
+
+}
+
+
