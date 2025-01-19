@@ -1,0 +1,16 @@
+[
+  {
+    "instrument_token": 256265,
+    "exchange_token": "1001",
+    "tradingsymbol": "NIFTY 50",
+    "name": "NIFTY 50",
+    "exchange": "NSE"
+  },
+  {
+    "instrument_token": 256777,
+    "exchange_token": "1003",
+    "tradingsymbol": "NIFTY MIDCAP 100",
+    "name": "NIFTY MIDCAP 100",
+    "exchange": "NSE"
+  }
+]
