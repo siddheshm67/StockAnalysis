@@ -28,7 +28,8 @@ public class DataController {
     @GetMapping("/read")
     public String readInputFile() {
         System.out.println("Started....");
-        dataService.readInputFile("Backtest High volume 10x, Technical Analysis Scanner.csv",10);
+        dataService.readInputFile("Backtest High volume 10x, Technical Analysis Scanner.csv",1000);
+        System.out.println(".........Done.......");
         return "Done....";
     }
 

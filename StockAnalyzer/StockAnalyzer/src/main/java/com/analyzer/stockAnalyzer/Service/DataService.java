@@ -17,12 +17,11 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class DataService {
@@ -30,10 +29,15 @@ public class DataService {
     @Autowired
     private DataRepo dataRepo;
 
+
+    @Autowired
+    private InstrumentService instrumentService;
+
+
     public void startStockAnalysis(int tokenParam, String name, LocalDate dateParam) {
 
         HistoricalData historicalData = new HistoricalData();
-        String enctoken = "WCRe0AVMelntS4wHj2nOvCs1w+h9cue63U0DTGg5+0hkCWSDE7QvYdFDfSpTkBVYPSCgsxkkUeEOpyb0PolpxR2Wr1GLe7Ha0sun4oIwVXs2KCYnnpD/Ug==";
+        String enctoken = "yaltI8/o7NUHwWBEm/ZTm9HUy8uKTBraQi1NqydArcFuA6LwF7LxcoerZ3a6EyXbc4zZ4rwshfZCZWIDU6k7GlykPmOLZnrVT1H3Zlvf5pDfaQKHYtn4FQ==";
         int token = tokenParam;
         String stockName = name;
 
@@ -211,8 +215,18 @@ public class DataService {
         }
 
         HistoricalData analyzedData = AnalyzeStocks(historicalData);
-        HistoricalData saved = dataRepo.save(analyzedData);
-        writeToExcelFile(saved);
+        HistoricalData saved = null;
+        try {
+            saved = dataRepo.save(analyzedData);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+        if (saved != null){
+          //  writeToExcelFile(saved);
+        }else {
+            System.out.println("stoped null!!!!");
+        }
         System.out.println(saved);
     }
 
@@ -302,8 +316,10 @@ public class DataService {
 
         // Write the object to Excel
         try (Workbook workbook = new XSSFWorkbook(); FileOutputStream fileOut = new FileOutputStream(fileName)) {
+            LocalDateTime now = LocalDateTime.now();
+            String string = now.toString();
             // Create a sheet
-            Sheet sheet = workbook.createSheet("Historical Data");
+            Sheet sheet = workbook.createSheet("report");
 
             // Write header row
             String[] headers = {
@@ -416,19 +432,25 @@ public class DataService {
             String line;
 
             // Skip the header line if the CSV has headers
-            // br.readLine();
+             br.readLine();
             int counter = 1;
             while ((line = br.readLine()) != null) {
-                if (counter < limit) {
+                if (counter <= limit) {
                     // Split the line by comma (you can adjust the delimiter if needed)
                     String[] columns = line.split(",");
 
                     if (columns.length >= 2) { // Check if there are at least two columns
-                        String firstColumn = columns[0]; // First column
-                        String secondColumn = columns[1]; // Second column
+                        String date = columns[0]; // First column
+                        String name = columns[1]; // Second column
+                        Long token = instrumentService.getTokenByName(name);
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+                        // Convert the string to LocalDate
+                        LocalDate localDate = LocalDate.parse(date, formatter);
+                        startStockAnalysis(Math.toIntExact(token),name, localDate);
 
                         // Print the values of the first and second columns
-                        System.out.println("First Column: " + firstColumn + ", Second Column: " + secondColumn);
+                       // System.out.println("First Column: " + firstColumn + ", Second Column: " + secondColumn);
+
                     }
                 }else {
                     break;

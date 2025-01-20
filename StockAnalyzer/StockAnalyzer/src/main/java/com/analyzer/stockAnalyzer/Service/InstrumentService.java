@@ -2,19 +2,12 @@ package com.analyzer.stockAnalyzer.Service;
 
 import com.analyzer.stockAnalyzer.Models.Instruments;
 import com.analyzer.stockAnalyzer.Repo.InstrumentRepo;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -76,10 +69,30 @@ public class InstrumentService {
 
     public Long getTokenByName(String name) {
         System.out.println("getting token for : " + name);
-        Optional<Instruments> symbol = repository.findByTradingSymbol(name);
-        Instruments instrument = symbol.get();
-        Long instrumentToken = instrument.getInstrumentToken();
+        Optional<List<Instruments>> symbols = null;
+        Long instrumentToken = null;
+        try {
+           symbols  = repository.findByTradingSymbolContaining(name);
+
+        List<Instruments> instrumentsList = symbols.get();
+        if (instrumentsList.size() > 1){
+            System.out.println(instrumentsList);
+            for (Instruments instrument: instrumentsList){
+                if (instrument.getTradingSymbol().equals(name)){
+                instrumentToken = instrument.getInstrumentToken();
+                }
+            }
+        }else {
+            Instruments stockDetail = instrumentsList.get(0);
+            instrumentToken = stockDetail.getInstrumentToken();
+        }
+
+
+//
         System.out.println("StockName " + name + " | Token " + instrumentToken);
+        }catch (Exception e){
+            e.getMessage();
+        }
         return instrumentToken;
     }
 
